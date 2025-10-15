@@ -63,7 +63,7 @@ Once added, your sensors will automatically appear:
 | Hysteresis High | High hysteresis value |
 | Hysteresis Low | Low hysteresis value |
 | Relay State | Current relay state (`ON` / `OFF`) |
-| Function | Current function of thermostat (HEATING / COOLING) |
+| Function | Current function of thermostat (HEATING / COOLING / OFF) |
 
 ---
 
