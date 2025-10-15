@@ -57,15 +57,16 @@ async def async_setup_entry(hass, entry, async_add_entities):
             entities.append(ProSmartScheduleSetPointSensor(coordinator))
             entities.append(ProSmartBoostSetPointSensor(coordinator))
 
+            # --- Function / Relay / Boost ---
+            entities.append(ProSmartFunctionSensor(coordinator))
+            entities.append(ProSmartRelayStateSensor(coordinator))
+            entities.append(ProSmartRelayModeSensor(coordinator))
+            entities.append(ProSmartBoostActiveSensor(coordinator))
+            entities.append(ProSmartBoostRemainingSensor(coordinator))
+
             # --- Hysteresis ---
             entities.append(ProSmartHysteresisHighSensor(coordinator))
             entities.append(ProSmartHysteresisLowSensor(coordinator))
-
-            # --- Function & State info ---
-            entities.append(ProSmartFunctionSensor(coordinator))
-            entities.append(ProSmartBoostActiveSensor(coordinator))
-            entities.append(ProSmartBoostRemainingSensor(coordinator))
-            entities.append(ProSmartRelayStateSensor(coordinator))
 
         async_add_entities(entities)
         _LOGGER.info("ProSmart sensors added: %s", [e._attr_name for e in entities])
@@ -75,7 +76,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
 
 class ProSmartCoordinator(DataUpdateCoordinator):
-    """Coordinator to fetch temperature, manual set point, and hysteresis periodically."""
+    """Coordinator to fetch temperature, setpoints, and relay info periodically."""
 
     def __init__(self, hass, session, headers, device_id, device_name):
         self.session = session
@@ -107,10 +108,7 @@ class ProSmartCoordinator(DataUpdateCoordinator):
 
                 # --- Relay info ---
                 relays = result.get("relays", [])
-                if relays:
-                    relay = relays[0]
-                else:
-                    relay = {}
+                relay = relays[0] if relays else {}
 
                 # --- Collect all data ---
                 self.data = {
@@ -120,9 +118,10 @@ class ProSmartCoordinator(DataUpdateCoordinator):
                     "boost_set_point": relay.get("boost_set_point"),
                     "boost_active": relay.get("boost_active"),
                     "boost_remaining": (
-                            round(relay["boost_remaining"] / 60) if relay.get("boost_remaining") is not None else None
-                        ),
+                        round(relay["boost_remaining"] / 60) if relay.get("boost_remaining") is not None else None
+                    ),
                     "relay_state": relay.get("relay_state"),
+                    "relay_mode": relay.get("mode"),
                     "function": relay.get("function"),
                     "hysteresis_high": relay.get("hysteresis_high"),
                     "hysteresis_low": relay.get("hysteresis_low"),
@@ -134,7 +133,7 @@ class ProSmartCoordinator(DataUpdateCoordinator):
             raise UpdateFailed(f"Error fetching device data: {e}") from e
 
 
-# ---------- TEMPERATURE SENSORS ----------
+# ---------- TEMPERATURE & SETPOINT SENSORS ----------
 
 class ProSmartTemperatureSensor(CoordinatorEntity, SensorEntity):
     _attr_device_class = SensorDeviceClass.TEMPERATURE
@@ -150,6 +149,7 @@ class ProSmartTemperatureSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self):
         return self.coordinator.data.get("temperature")
+
     @property
     def device_info(self):
         return {
@@ -158,6 +158,7 @@ class ProSmartTemperatureSensor(CoordinatorEntity, SensorEntity):
             "manufacturer": "Computherm / ProSmart",
             "model": "Wi-Fi Thermostat",
         }
+
 
 class ProSmartManualSetPointSensor(CoordinatorEntity, SensorEntity):
     _attr_device_class = SensorDeviceClass.TEMPERATURE
@@ -173,6 +174,7 @@ class ProSmartManualSetPointSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self):
         return self.coordinator.data.get("manual_set_point")
+
     @property
     def device_info(self):
         return {
@@ -181,6 +183,7 @@ class ProSmartManualSetPointSensor(CoordinatorEntity, SensorEntity):
             "manufacturer": "Computherm / ProSmart",
             "model": "Wi-Fi Thermostat",
         }
+
 
 class ProSmartScheduleSetPointSensor(CoordinatorEntity, SensorEntity):
     _attr_device_class = SensorDeviceClass.TEMPERATURE
@@ -196,6 +199,7 @@ class ProSmartScheduleSetPointSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self):
         return self.coordinator.data.get("schedule_set_point")
+
     @property
     def device_info(self):
         return {
@@ -204,6 +208,7 @@ class ProSmartScheduleSetPointSensor(CoordinatorEntity, SensorEntity):
             "manufacturer": "Computherm / ProSmart",
             "model": "Wi-Fi Thermostat",
         }
+
 
 class ProSmartBoostSetPointSensor(CoordinatorEntity, SensorEntity):
     _attr_device_class = SensorDeviceClass.TEMPERATURE
@@ -219,6 +224,7 @@ class ProSmartBoostSetPointSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self):
         return self.coordinator.data.get("boost_set_point")
+
     @property
     def device_info(self):
         return {
@@ -228,10 +234,10 @@ class ProSmartBoostSetPointSensor(CoordinatorEntity, SensorEntity):
             "model": "Wi-Fi Thermostat",
         }
 
+
 # ---------- FUNCTION / STATE SENSORS ----------
 
 class ProSmartFunctionSensor(CoordinatorEntity, SensorEntity):
-    """Function state (text) sensor."""
     _attr_icon = "mdi:cog"
 
     def __init__(self, coordinator):
@@ -241,8 +247,8 @@ class ProSmartFunctionSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self):
-        """Return the current function as plain text, e.g. HEATING / COOLING."""
         return self.coordinator.data.get("function")
+
     @property
     def device_info(self):
         return {
@@ -252,8 +258,8 @@ class ProSmartFunctionSensor(CoordinatorEntity, SensorEntity):
             "model": "Wi-Fi Thermostat",
         }
 
+
 class ProSmartRelayStateSensor(CoordinatorEntity, SensorEntity):
-    """Shows whether the relay is ON or OFF."""
     _attr_icon = "mdi:power"
 
     def __init__(self, coordinator):
@@ -264,6 +270,7 @@ class ProSmartRelayStateSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self):
         return self.coordinator.data.get("relay_state")
+
     @property
     def device_info(self):
         return {
@@ -272,6 +279,30 @@ class ProSmartRelayStateSensor(CoordinatorEntity, SensorEntity):
             "manufacturer": "Computherm / ProSmart",
             "model": "Wi-Fi Thermostat",
         }
+
+
+class ProSmartRelayModeSensor(CoordinatorEntity, SensorEntity):
+    """Shows the current relay mode (SCHEDULE, MANUAL, BOOST, etc.)."""
+    _attr_icon = "mdi:swap-horizontal"
+
+    def __init__(self, coordinator):
+        super().__init__(coordinator)
+        self._attr_name = f"{coordinator.device_name} Relay Mode"
+        self._attr_unique_id = f"{coordinator.device_id}_relay_mode"
+
+    @property
+    def native_value(self):
+        return self.coordinator.data.get("relay_mode")
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {(DOMAIN, self.coordinator.device_id)},
+            "name": self.coordinator.device_name,
+            "manufacturer": "Computherm / ProSmart",
+            "model": "Wi-Fi Thermostat",
+        }
+
 
 class ProSmartBoostActiveSensor(CoordinatorEntity, SensorEntity):
     _attr_icon = "mdi:rocket"
@@ -285,6 +316,7 @@ class ProSmartBoostActiveSensor(CoordinatorEntity, SensorEntity):
     def native_value(self):
         value = self.coordinator.data.get("boost_active")
         return "ON" if value else "OFF"
+
     @property
     def device_info(self):
         return {
@@ -293,6 +325,7 @@ class ProSmartBoostActiveSensor(CoordinatorEntity, SensorEntity):
             "manufacturer": "Computherm / ProSmart",
             "model": "Wi-Fi Thermostat",
         }
+
 
 class ProSmartBoostRemainingSensor(CoordinatorEntity, SensorEntity):
     _attr_icon = "mdi:timer-outline"
@@ -306,6 +339,7 @@ class ProSmartBoostRemainingSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self):
         return self.coordinator.data.get("boost_remaining")
+
     @property
     def device_info(self):
         return {
@@ -314,6 +348,7 @@ class ProSmartBoostRemainingSensor(CoordinatorEntity, SensorEntity):
             "manufacturer": "Computherm / ProSmart",
             "model": "Wi-Fi Thermostat",
         }
+
 
 # ---------- HYSTERESIS ----------
 
@@ -330,6 +365,7 @@ class ProSmartHysteresisHighSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self):
         return self.coordinator.data.get("hysteresis_high")
+
     @property
     def device_info(self):
         return {
@@ -338,6 +374,7 @@ class ProSmartHysteresisHighSensor(CoordinatorEntity, SensorEntity):
             "manufacturer": "Computherm / ProSmart",
             "model": "Wi-Fi Thermostat",
         }
+
 
 class ProSmartHysteresisLowSensor(CoordinatorEntity, SensorEntity):
     _attr_name = "Hysteresis Low"
@@ -352,6 +389,7 @@ class ProSmartHysteresisLowSensor(CoordinatorEntity, SensorEntity):
     @property
     def native_value(self):
         return self.coordinator.data.get("hysteresis_low")
+
     @property
     def device_info(self):
         return {
