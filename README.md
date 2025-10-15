@@ -15,10 +15,10 @@ Bring your **Computherm B / ProSmart System Wi-Fi Thermostat** into Home Assista
   See real-time readings from your thermostat.
 
 - **Manual & Schedule Setpoints**  
-  Keep track of your manual adjustments and programmed schedules.
+  Keep track of your manual adjustments and programmed schedules, change manual temperature.
 
 - **Boost Control**  
-  Display boost mode state (`ON` / `OFF`) and remaining boost time in minutes.
+  Display boost mode state (`ON` / `OFF`) and remaining boost time in minutes, change boost temperature.
 
 - **Hysteresis Values**  
   Monitor high and low hysteresis settings for precise temperature control.
