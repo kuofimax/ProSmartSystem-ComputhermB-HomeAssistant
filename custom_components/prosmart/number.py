@@ -7,7 +7,6 @@ DOMAIN = "computherm_b"
 
 
 async def async_setup_entry(hass, entry, async_add_entities):
-    """Set up ProSmart Boost, Boost Temperature, and Manual Setpoint numbers from a config entry."""
     email = entry.data["email"]
     password = entry.data["password"]
 
@@ -15,7 +14,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
     entities = []
 
     try:
-        # --- LOGIN ---
+        # LOGIN
         async with session.post(
             "https://api.prosmartsystem.com/api/auth/login",
             json={"email": email, "password": password},
@@ -30,7 +29,7 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
         headers = {"Authorization": f"Bearer {token}"}
 
-        # --- GET DEVICES ---
+        # GET DEVICES
         async with session.get(
             "https://api.prosmartsystem.com/api/devices",
             headers=headers,
@@ -43,18 +42,9 @@ async def async_setup_entry(hass, entry, async_add_entities):
             device_id = dev["id"]
             device_name = dev.get("name") or dev.get("serial_number")
 
-            relays = dev.get("relays", [])
-            relay_data = relays[0] if relays else {}
-
-            # --- Boost duration from server ---
-            boost_remaining = relay_data.get("boost_remaining", 0)  # in minutes
-            boost_setpoint = relay_data.get("boost_set_point", 24)
-            manual_setpoint = relay_data.get("manual_set_point", 22)
-
-            # Entities
-            entities.append(ProSmartBoostNumber(hass, token, device_id, device_name, boost_remaining))
-            entities.append(ProSmartBoostTemperatureNumber(hass, token, device_id, device_name, boost_setpoint))
-            entities.append(ProSmartManualSetpointNumber(hass, token, device_id, device_name, manual_setpoint))
+            entities.append(ProSmartBoostDuration(hass, token, device_id, device_name))
+            entities.append(ProSmartBoostTemperature(hass, token, device_id, device_name))
+            entities.append(ProSmartManualTemperature(hass, token, device_id, device_name))
 
         async_add_entities(entities)
         _LOGGER.info("ProSmart numbers added: %s", [e._attr_name for e in entities])
@@ -63,16 +53,44 @@ async def async_setup_entry(hass, entry, async_add_entities):
         _LOGGER.exception("Error setting up ProSmart numbers: %s", e)
 
 
-class ProSmartBoostNumber(NumberEntity):
-    """Boost duration control as a NumberEntity (minutes)."""
-
-    def __init__(self, hass, token, device_id, device_name, boost_minutes=30):
+class ProSmartNumberBase(NumberEntity):
+    def __init__(self, hass, token, device_id, device_name):
         self.hass = hass
         self._token = token
         self._device_id = device_id
         self._device_name = device_name
-        self._boost_minutes = boost_minutes
+        self._session = async_get_clientsession(hass)
 
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {(DOMAIN, self._device_id)},
+            "name": self._device_name,
+            "manufacturer": "ProSmart System",
+            "model": "BBoil Classic",
+        }
+
+    async def _get_relay(self):
+        """GET current relay state from device."""
+        headers = {"Authorization": f"Bearer {self._token}"}
+        try:
+            async with self._session.get(
+                f"https://api.prosmartsystem.com/api/devices/{self._device_id}",
+                headers=headers,
+                timeout=10
+            ) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
+                # Use the first relay (index 0)
+                return data["relays"][0]
+        except Exception as e:
+            _LOGGER.error("Error fetching relay data: %s", e)
+            return None
+
+
+class ProSmartBoostDuration(ProSmartNumberBase):
+    def __init__(self, hass, token, device_id, device_name):
+        super().__init__(hass, token, device_id, device_name)
         self._attr_name = f"{device_name} Boost Duration"
         self._attr_unique_id = f"{device_id}_boost_duration"
         self._attr_native_min_value = 0
@@ -81,127 +99,100 @@ class ProSmartBoostNumber(NumberEntity):
         self._attr_native_unit_of_measurement = "min"
 
     @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, self._device_id)},
-            "name": self._device_name,
-            "manufacturer": "ProSmart System",
-            "model": "BBoil Classic",
-        }
-
-    @property
     def native_value(self):
-        return self._boost_minutes
+        # Return last known value; will be refreshed by async_update
+        return getattr(self, "_boost_minutes", 0)
+
+    async def async_update(self):
+        relay = await self._get_relay()
+        if relay:
+            self._boost_minutes = relay.get("boost_remaining", 0)
+
 
     async def async_set_native_value(self, value: float):
-        """Boost duration is read-only from server; no POST needed."""
         self._boost_minutes = int(value)
         self.async_write_ha_state()
 
+        headers = {"Authorization": f"Bearer {self._token}"}
+        try:
+            async with self._session.post(
+                f"https://api.prosmartsystem.com/api/devices/{self._device_id}/cmd",
+                headers=headers,
+                json={"relay": 1, "boost_time": self._boost_minutes * 60},
+                timeout=10
+            ) as resp:
+                resp.raise_for_status()
+        except Exception as e:
+            _LOGGER.error("Error sending boost command: %s", e)
 
-class ProSmartBoostTemperatureNumber(NumberEntity):
-    """Boost temperature control as a NumberEntity (°C)."""
 
-    def __init__(self, hass, token, device_id, device_name, temperature=24.0):
-        self.hass = hass
-        self._token = token
-        self._device_id = device_id
-        self._device_name = device_name
-        self._temperature = temperature
-
+class ProSmartBoostTemperature(ProSmartNumberBase):
+    def __init__(self, hass, token, device_id, device_name):
+        super().__init__(hass, token, device_id, device_name)
         self._attr_name = f"{device_name} Boost Temperature"
         self._attr_unique_id = f"{device_id}_boost_temperature"
         self._attr_native_min_value = 5
         self._attr_native_max_value = 35
         self._attr_native_step = 0.1
         self._attr_native_unit_of_measurement = "°C"
-
-    @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, self._device_id)},
-            "name": self._device_name,
-            "manufacturer": "ProSmart System",
-            "model": "BBoil Classic",
-        }
+        self._temperature = 24.0
 
     @property
     def native_value(self):
-        return self._temperature
+        return getattr(self, "_temperature", 24.0)
+
+    async def async_update(self):
+        relay = await self._get_relay()
+        if relay:
+            self._temperature = relay.get("boost_set_point", 24.0)
 
     async def async_set_native_value(self, value: float):
-        """Send boost temperature POST command and update state."""
         self._temperature = round(float(value), 1)
         self.async_write_ha_state()
-
-        session = async_get_clientsession(self.hass)
         headers = {"Authorization": f"Bearer {self._token}"}
-
         try:
-            async with session.post(
+            async with self._session.post(
                 f"https://api.prosmartsystem.com/api/devices/{self._device_id}/cmd",
                 headers=headers,
                 json={"relay": 1, "boost_set_point": self._temperature},
                 timeout=10
             ) as resp:
                 resp.raise_for_status()
-                _LOGGER.info(
-                    "Boost temperature sent: device=%s temperature=%.1f°C",
-                    self._device_id, self._temperature
-                )
         except Exception as e:
             _LOGGER.error("Error sending boost temperature command: %s", e)
 
 
-class ProSmartManualSetpointNumber(NumberEntity):
-    """Manual temperature control as a NumberEntity (°C)."""
-
-    def __init__(self, hass, token, device_id, device_name, temperature=22.0):
-        self.hass = hass
-        self._token = token
-        self._device_id = device_id
-        self._device_name = device_name
-        self._temperature = temperature
-
+class ProSmartManualTemperature(ProSmartNumberBase):
+    def __init__(self, hass, token, device_id, device_name):
+        super().__init__(hass, token, device_id, device_name)
         self._attr_name = f"{device_name} Manual Temperature"
         self._attr_unique_id = f"{device_id}_manual_temperature"
         self._attr_native_min_value = 5
         self._attr_native_max_value = 35
         self._attr_native_step = 0.1
         self._attr_native_unit_of_measurement = "°C"
-
-    @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, self._device_id)},
-            "name": self._device_name,
-            "manufacturer": "ProSmart System",
-            "model": "BBoil Classic",
-        }
+        self._temperature = 22.0
 
     @property
     def native_value(self):
-        return self._temperature
+        return getattr(self, "_temperature", 22.0)
+
+    async def async_update(self):
+        relay = await self._get_relay()
+        if relay:
+            self._temperature = relay.get("manual_set_point", 22.0)
 
     async def async_set_native_value(self, value: float):
-        """Send manual temperature POST command and update state."""
         self._temperature = round(float(value), 1)
         self.async_write_ha_state()
-
-        session = async_get_clientsession(self.hass)
         headers = {"Authorization": f"Bearer {self._token}"}
-
         try:
-            async with session.post(
+            async with self._session.post(
                 f"https://api.prosmartsystem.com/api/devices/{self._device_id}/cmd",
                 headers=headers,
                 json={"relay": 1, "manual_set_point": self._temperature},
                 timeout=10
             ) as resp:
                 resp.raise_for_status()
-                _LOGGER.info(
-                    "Manual setpoint sent: device=%s temperature=%.1f°C",
-                    self._device_id, self._temperature
-                )
         except Exception as e:
-            _LOGGER.error("Error sending manual setpoint command: %s", e)
+            _LOGGER.error("Error sending manual temperature command: %s", e)
