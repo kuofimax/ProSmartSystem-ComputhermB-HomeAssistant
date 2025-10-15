@@ -4,8 +4,8 @@
   "version": "1.0",
   "codeowners": ["@Pucur"],
   "requirements": [],
-  "documentation": "https://github.com/Pucur/prosmartsystem-computhermb-ha",
-  "issue_tracker": "https://github.com/Pucur/prosmartsystem-computhermb-ha/issues",
+  "documentation": "https://github.com/Pucur/ProSmartSystem-ComputhermB-HomeAssistant",
+  "issue_tracker": "https://github.com/Pucur/ProSmartSystem-ComputhermB-HomeAssistant/issues",
   "dependencies": [],
   "config_flow": true
 }
