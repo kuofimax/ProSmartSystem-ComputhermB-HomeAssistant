@@ -1,10 +1,11 @@
 import logging
 from datetime import timedelta
-
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed, CoordinatorEntity
 from homeassistant.components.sensor import SensorEntity, SensorDeviceClass, SensorStateClass
 from homeassistant.const import UnitOfTemperature
+from .auth import ProSmartAuth
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+import asyncio
 
 _LOGGER = logging.getLogger(__name__)
 DOMAIN = "computherm_b"
@@ -17,70 +18,44 @@ async def async_setup_entry(hass, entry, async_add_entities):
     password = entry.data["password"]
 
     session = async_get_clientsession(hass)
+    auth = ProSmartAuth(session, email, password)
+
+    devices = await auth.request("GET", "https://api.prosmartsystem.com/api/devices")
     entities = []
 
-    try:
-        # --- LOGIN ---
-        async with session.post(
-            "https://api.prosmartsystem.com/api/auth/login",
-            json={"email": email, "password": password},
-            timeout=10
-        ) as resp:
-            resp.raise_for_status()
-            data = await resp.json()
-            token = data.get("access_token")
-            if not token:
-                _LOGGER.error("No access token returned")
-                return
+    for dev in devices:
+        device_id = dev["id"]
+        device_name = dev.get("name") or dev.get("serial_number")
 
-        headers = {"Authorization": f"Bearer {token}"}
+        coordinator = ProSmartCoordinator(hass, auth, device_id, device_name)
+        await coordinator.async_config_entry_first_refresh()
 
-        # --- GET DEVICES ---
-        async with session.get(
-            "https://api.prosmartsystem.com/api/devices",
-            headers=headers,
-            timeout=10
-        ) as dev_resp:
-            dev_resp.raise_for_status()
-            devices = await dev_resp.json()
+        # --- Temperature & Setpoints ---
+        entities.append(ProSmartTemperatureSensor(coordinator))
+        entities.append(ProSmartManualSetPointSensor(coordinator))
+        entities.append(ProSmartScheduleSetPointSensor(coordinator))
+        entities.append(ProSmartBoostSetPointSensor(coordinator))
 
-        for dev in devices:
-            device_id = dev["id"]
-            device_name = dev.get("name") or dev.get("serial_number")
+        # --- Function / Relay / Boost ---
+        entities.append(ProSmartFunctionSensor(coordinator))
+        entities.append(ProSmartRelayStateSensor(coordinator))
+        entities.append(ProSmartRelayModeSensor(coordinator))
+        entities.append(ProSmartBoostActiveSensor(coordinator))
+        entities.append(ProSmartBoostRemainingSensor(coordinator))
 
-            coordinator = ProSmartCoordinator(hass, session, headers, device_id, device_name)
-            await coordinator.async_config_entry_first_refresh()
+        # --- Hysteresis ---
+        entities.append(ProSmartHysteresisHighSensor(coordinator))
+        entities.append(ProSmartHysteresisLowSensor(coordinator))
 
-            # --- Temperature & Setpoints ---
-            entities.append(ProSmartTemperatureSensor(coordinator))
-            entities.append(ProSmartManualSetPointSensor(coordinator))
-            entities.append(ProSmartScheduleSetPointSensor(coordinator))
-            entities.append(ProSmartBoostSetPointSensor(coordinator))
-
-            # --- Function / Relay / Boost ---
-            entities.append(ProSmartFunctionSensor(coordinator))
-            entities.append(ProSmartRelayStateSensor(coordinator))
-            entities.append(ProSmartRelayModeSensor(coordinator))
-            entities.append(ProSmartBoostActiveSensor(coordinator))
-            entities.append(ProSmartBoostRemainingSensor(coordinator))
-
-            # --- Hysteresis ---
-            entities.append(ProSmartHysteresisHighSensor(coordinator))
-            entities.append(ProSmartHysteresisLowSensor(coordinator))
-
-        async_add_entities(entities)
-        _LOGGER.info("ProSmart sensors added: %s", [e._attr_name for e in entities])
-
-    except Exception as e:
-        _LOGGER.exception("Error setting up ProSmart sensors: %s", e)
+    async_add_entities(entities)
+    _LOGGER.info("ProSmart sensors added: %s", [e._attr_name for e in entities])
 
 
 class ProSmartCoordinator(DataUpdateCoordinator):
     """Coordinator to fetch temperature, setpoints, and relay info periodically."""
 
-    def __init__(self, hass, session, headers, device_id, device_name):
-        self.session = session
-        self.headers = headers
+    def __init__(self, hass, auth: ProSmartAuth, device_id, device_name):
+        self.auth = auth
         self.device_id = device_id
         self.device_name = device_name
         self.data = {}
@@ -92,25 +67,18 @@ class ProSmartCoordinator(DataUpdateCoordinator):
         )
 
     async def _async_update_data(self):
-        """Fetch data from ProSmart API."""
-        try:
-            async with self.session.get(
-                f"https://api.prosmartsystem.com/api/devices/{self.device_id}/cmd/scan",
-                headers=self.headers,
-                timeout=10
-            ) as resp:
-                resp.raise_for_status()
-                result = await resp.json()
+        while True:
+            try:
+                result = await self.auth.request(
+                    "GET", f"https://api.prosmartsystem.com/api/devices/{self.device_id}/cmd/scan"
+                )
 
-                # --- Temperature ---
                 readings = result.get("readings", [])
                 temperature = next((r.get("reading") for r in readings if r.get("type") == "TEMPERATURE"), None)
 
-                # --- Relay info ---
                 relays = result.get("relays", [])
                 relay = relays[0] if relays else {}
 
-                # --- Collect all data ---
                 self.data = {
                     "temperature": temperature,
                     "manual_set_point": relay.get("manual_set_point"),
@@ -126,12 +94,11 @@ class ProSmartCoordinator(DataUpdateCoordinator):
                     "hysteresis_high": relay.get("hysteresis_high"),
                     "hysteresis_low": relay.get("hysteresis_low"),
                 }
-
                 return self.data
 
-        except Exception as e:
-            raise UpdateFailed(f"Error fetching device data: {e}") from e
-
+            except Exception as e:
+                _LOGGER.warning("Error fetching device data, retrying in 10s: %s", e)
+                await asyncio.sleep(10)
 
 # ---------- TEMPERATURE & SETPOINT SENSORS ----------
 
