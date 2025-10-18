@@ -24,6 +24,8 @@ async def async_setup_entry(hass, entry, async_add_entities):
 
         entities.append(ProSmartModeButton(hass, auth, device_id, "MANUAL", device_name))
         entities.append(ProSmartModeButton(hass, auth, device_id, "SCHEDULE", device_name))
+        entities.append(ProSmartModeButton(hass, auth, device_id, "OFF", device_name))
+
 
     async_add_entities(entities)
     _LOGGER.info("ProSmart buttons added: %s", [e.name for e in entities])

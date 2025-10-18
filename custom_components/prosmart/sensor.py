@@ -48,8 +48,8 @@ async def async_setup_entry(hass, entry, async_add_entities):
         entities.append(ProSmartHysteresisLowSensor(coordinator))
 
     async_add_entities(entities)
-    _LOGGER.info("ProSmart sensors added: %s", [e._attr_name for e in entities])
-
+#    _LOGGER.info("ProSmart sensors added: %s", [e._attr_name for e in entities])
+    _LOGGER.info("DEBUG coordinator data for %s: %s", device_name, coordinator.data)
 
 class ProSmartCoordinator(DataUpdateCoordinator):
     """Coordinator to fetch temperature, setpoints, and relay info periodically."""

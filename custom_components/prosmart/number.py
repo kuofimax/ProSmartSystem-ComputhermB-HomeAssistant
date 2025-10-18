@@ -3,6 +3,7 @@ from homeassistant.components.number import NumberEntity
 from .auth import ProSmartAuth
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
+
 _LOGGER = logging.getLogger(__name__)
 DOMAIN = "computherm_b"
 
@@ -25,10 +26,11 @@ async def async_setup_entry(hass, entry, async_add_entities):
         device_id = dev["id"]
         device_name = dev.get("name") or dev.get("serial_number")
 
-        # Csoportosítás: minden NumberEntity a fizikai eszköz alá kerül
         entities.append(ProSmartBoostDuration(auth, device_id, device_name))
         entities.append(ProSmartBoostTemperature(auth, device_id, device_name))
         entities.append(ProSmartManualTemperature(auth, device_id, device_name))
+        entities.append(ProSmartHysteresisLow(auth, device_id, device_name))
+        entities.append(ProSmartHysteresisHigh(auth, device_id, device_name))
 
     async_add_entities(entities)
     _LOGGER.info("ProSmart numbers added: %s", [e.name for e in entities])
@@ -37,25 +39,22 @@ async def async_setup_entry(hass, entry, async_add_entities):
 class ProSmartNumberBase(NumberEntity):
     """Base class for all ProSmart numbers."""
 
-    def __init__(self, auth: ProSmartAuth, device_id, device_name):
+    def __init__(self, auth, device_id, device_name):
         self._auth = auth
         self._device_id = device_id
         self._device_name = device_name
 
-    async def _get_relay(self):
-        try:
-            data = await self._auth.request(
-                "GET",
-                f"https://api.prosmartsystem.com/api/devices/{self._device_id}"
-            )
-            relays = data.get("relays", [])
-            return relays[0] if relays else None
-        except Exception as e:
-            _LOGGER.error("Error fetching relay data: %s", e)
-            return None
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {(DOMAIN, self._device_id)},
+            "name": self._device_name,
+            "manufacturer": "Computherm / ProSmart",
+            "model": "Wi-Fi Thermostat",
+        }
 
     async def _send_cmd(self, json_data):
-        """Send POST command through auth (handles token refresh)."""
+        """Csak POST-olás, GET nincs."""
         try:
             await self._auth.request(
                 "POST",
@@ -64,7 +63,6 @@ class ProSmartNumberBase(NumberEntity):
             )
         except Exception as e:
             _LOGGER.error("Error sending command %s: %s", json_data, e)
-
     @property
     def device_info(self):
         return {
@@ -84,16 +82,11 @@ class ProSmartBoostDuration(ProSmartNumberBase):
         self._attr_native_max_value = 180
         self._attr_native_step = 1
         self._attr_native_unit_of_measurement = "min"
-        self._boost_minutes = 0
+        self._boost_minutes = 0  # default érték
 
     @property
     def native_value(self):
         return self._boost_minutes
-
-    async def async_update(self):
-        relay = await self._get_relay()
-        if relay:
-            self._boost_minutes = relay.get("boost_remaining", 0)
 
     async def async_set_native_value(self, value: float):
         self._boost_minutes = int(value)
@@ -110,16 +103,11 @@ class ProSmartBoostTemperature(ProSmartNumberBase):
         self._attr_native_max_value = 35
         self._attr_native_step = 0.1
         self._attr_native_unit_of_measurement = "°C"
-        self._temperature = 24.0
+        self._temperature = 24.0  # default
 
     @property
     def native_value(self):
         return self._temperature
-
-    async def async_update(self):
-        relay = await self._get_relay()
-        if relay:
-            self._temperature = relay.get("boost_set_point", 24.0)
 
     async def async_set_native_value(self, value: float):
         self._temperature = round(float(value), 1)
@@ -136,18 +124,53 @@ class ProSmartManualTemperature(ProSmartNumberBase):
         self._attr_native_max_value = 35
         self._attr_native_step = 0.1
         self._attr_native_unit_of_measurement = "°C"
-        self._temperature = 22.0
+        self._temperature = 22.0  # default
 
     @property
     def native_value(self):
         return self._temperature
 
-    async def async_update(self):
-        relay = await self._get_relay()
-        if relay:
-            self._temperature = relay.get("manual_set_point", 22.0)
-
     async def async_set_native_value(self, value: float):
         self._temperature = round(float(value), 1)
         self.async_write_ha_state()
         await self._send_cmd({"relay": 1, "manual_set_point": self._temperature})
+
+class ProSmartHysteresisHigh(ProSmartNumberBase):
+    def __init__(self, auth, device_id, device_name):
+        super().__init__(auth, device_id, device_name)
+        self._attr_name = f"{device_name} Hysteresis High"
+        self._attr_unique_id = f"{device_id}_hysteresis_high"
+        self._attr_native_min_value = 0
+        self._attr_native_max_value = 20
+        self._attr_native_step = 0.1
+        self._attr_native_unit_of_measurement = "°C"
+        self._temperature = 0  # default
+
+    @property
+    def native_value(self):
+        return self._temperature
+
+    async def async_set_native_value(self, value: float):
+        self._temperature = round(float(value), 1)
+        self.async_write_ha_state()
+        await self._send_cmd({"relay": 1, "hysteresis_high": self._temperature})
+
+class ProSmartHysteresisLow(ProSmartNumberBase):
+    def __init__(self, auth, device_id, device_name): 
+        super().__init__(auth, device_id, device_name)    
+        self._attr_name = f"{device_name} Hysteresis Low"
+        self._attr_unique_id = f"{device_id}_hysteresis_low"
+        self._attr_native_min_value = 0 
+        self._attr_native_max_value = 20
+        self._attr_native_step = 0.1
+        self._attr_native_unit_of_measurement = "°C"
+        self._temperature = 0  # default
+
+    @property
+    def native_value(self): 
+        return self._temperature
+
+    async def async_set_native_value(self, value: float):
+        self._temperature = round(float(value), 1)
+        self.async_write_ha_state()
+        await self._send_cmd({"relay": 1, "hysteresis_low": self._temperature})
